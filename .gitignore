@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+backend/*.sqlite3
+backend/*.sqlite3-shm
+backend/*.sqlite3-wal
+.env
