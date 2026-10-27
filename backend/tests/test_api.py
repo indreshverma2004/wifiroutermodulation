@@ -41,8 +41,11 @@ def test_experiment_storage_and_reports(client):
     a=client.post('/api/experiments/run',json=req); b=client.post('/api/experiments/run',json=req)
     assert a.status_code == 200
     first=a.json()
-    assert first['adaptive']==b.json()['adaptive']
+    repeat=b.json()
+    volatile={'engine_cpu_ms_per_tick','engine_cpu_pct_of_tick'}
+    assert {k:v for k,v in first['adaptive'].items() if k not in volatile} == {k:v for k,v in repeat['adaptive'].items() if k not in volatile}
     assert client.get('/api/experiments').status_code == 200
     assert 'baseline' in client.get(f"/api/experiments/{first['id']}/report.json").json()
-    assert first['baseline']['adaptation_time_s'] == first['adaptive']['adaptation_time_s'] == 0
+    assert first['baseline']['adaptation_time_s'] is None
+    assert first['adaptive']['adaptation_time_s'] is None
     assert 'text/csv' in client.get(f"/api/experiments/{first['id']}/report.csv").headers['content-type']

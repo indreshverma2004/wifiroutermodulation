@@ -1,6 +1,5 @@
-"""Deterministic packet-agnostic traffic and queue simulator."""
+"""Simulation coordinator for metadata flows, probe estimates, and finite queues."""
 from __future__ import annotations
-
 import math
 import random
 import time
@@ -9,9 +8,11 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from .capacity import CapacityEstimator
+from .queueing import QueueModel
+from .traffic import SCENARIO_CONFIG, generate_sessions
 
 CLASSES = ["Voice", "Video call", "Gaming", "Streaming", "Browsing", "Downloads", "Cloud backup", "Unknown"]
-PROTOCOLS = ["UDP", "UDP", "UDP", "QUIC", "HTTPS", "HTTPS", "HTTPS", "TCP"]
 DEFAULT_POLICIES = {
     "Voice": {"priority": 1, "minimum": 1, "limit": 8, "weight": 8},
     "Video call": {"priority": 2, "minimum": 4, "limit": 30, "weight": 6},
@@ -22,84 +23,55 @@ DEFAULT_POLICIES = {
     "Cloud backup": {"priority": 6, "minimum": 1, "limit": 40, "weight": 1},
     "Unknown": {"priority": 7, "minimum": 0.5, "limit": 20, "weight": 1},
 }
-SCENARIOS = {
-    "work_call_iso": "Work call vs ISO download",
-    "capacity_drop": "100 → 20 Mbps capacity drop",
-    "gaming_streams": "Gaming vs three TV streams",
-    "bulk_backup": "Downloads vs cloud backups",
-}
+SCENARIOS = {key: value["name"] for key, value in SCENARIO_CONFIG.items()}
 
 
 def jain_fairness(values: list[float]) -> float:
-    """Jain index across nonnegative class throughputs; zero when no service."""
-    vals = [max(0.0, float(x)) for x in values]
-    if not vals or sum(x * x for x in vals) == 0:
-        return 0.0
-    return (sum(vals) ** 2) / (len(vals) * sum(x * x for x in vals))
+    vals = [max(0.0, float(value)) for value in values]
+    squares = sum(value * value for value in vals)
+    return 0.0 if not vals or squares == 0 else sum(vals) ** 2 / (len(vals) * squares)
 
 
 def weighted_allocate(demand: dict[str, float], capacity: float, policies: dict[str, dict], adaptive: bool) -> dict[str, float]:
-    """Allocate rates with capped weighted max-min fill and minimum-rate guarantees.
-
-    If requested minima exceed capacity, minima are scaled proportionally, so an
-    infeasible policy can never claim more bandwidth than the link can provide.
-    """
+    """Capped weighted max-min fill with proportional infeasible minima."""
     names = list(demand)
-    caps = {n: max(0, min(demand[n], float(policies[n]["limit"]))) for n in names}
-    minima = {n: min(caps[n], max(0, float(policies[n]["minimum"]))) for n in names}
-    result = {n: 0.0 for n in names}
-    min_total = sum(minima.values())
-    if min_total > capacity and min_total:
-        result = {n: minima[n] * capacity / min_total for n in names}
-        return result
-    result = minima.copy()
-    remaining = max(0.0, capacity - sum(result.values()))
-    active = {n for n in names if caps[n] > result[n] + 1e-9}
+    caps = {name: max(0.0, min(float(demand[name]), float(policies[name]["limit"]))) for name in names}
+    minima = {name: min(caps[name], max(0.0, float(policies[name]["minimum"]))) for name in names}
+    minimum_total = sum(minima.values())
+    if minimum_total > capacity and minimum_total:
+        return {name: minima[name] * capacity / minimum_total for name in names}
+    allocation = minima.copy()
+    remaining = max(0.0, capacity - sum(allocation.values()))
+    active = {name for name in names if caps[name] > allocation[name] + 1e-9}
     while active and remaining > 1e-9:
-        weights = {n: (max(0.1, float(policies[n]["weight"])) * max(1, 9 - int(policies[n]["priority"])) if adaptive else 1.0) for n in active}
-        total_w = sum(weights.values())
-        progressed = 0.0
-        saturated = set()
-        for n in active:
-            share = remaining * weights[n] / total_w
-            add = min(share, caps[n] - result[n])
-            result[n] += add
-            progressed += add
-            if caps[n] - result[n] <= 1e-9:
-                saturated.add(n)
+        weights = {name: (max(0.1, float(policies[name]["weight"])) * max(1, 9-int(policies[name]["priority"])) if adaptive else 1.0) for name in active}
+        total_weight = sum(weights.values())
+        progressed, saturated = 0.0, set()
+        for name in active:
+            addition = min(remaining * weights[name] / total_weight, caps[name] - allocation[name])
+            allocation[name] += addition
+            progressed += addition
+            if caps[name] - allocation[name] <= 1e-9:
+                saturated.add(name)
         remaining -= progressed
         active -= saturated
         if progressed <= 1e-12:
             break
-    return result
+    return allocation
 
 
-class CapacityEstimator:
-    """EWMA capacity estimator that tracks sudden downshifts conservatively."""
-    def __init__(self, initial: float = 100.0, alpha: float = 0.45):
-        self.estimate = initial
-        self.alpha = alpha
-
-    def observe(self, measured: float) -> float:
-        measured = max(1.0, float(measured))
-        self.estimate = measured if measured < self.estimate else self.alpha * measured + (1 - self.alpha) * self.estimate
-        return self.estimate
+def fifo_allocate(demand: dict[str, float], capacity: float) -> dict[str, float]:
+    """Unprioritized FIFO reference: active classes share service by offered load."""
+    caps = {name: max(0.0, float(rate)) for name, rate in demand.items()}
+    total = sum(caps.values())
+    if total <= capacity or total <= 0:
+        return caps
+    return {name: rate * capacity / total for name, rate in caps.items()}
 
 
-def scenario_sessions(scenario: str) -> list[dict[str, Any]]:
-    specs = {
-        "work_call_iso": [("Video call", 6, 2), ("Downloads", 78, 1)],
-        "capacity_drop": [("Voice", 1, 2), ("Video call", 10, 2), ("Streaming", 32, 1), ("Browsing", 8, 2), ("Downloads", 55, 1)],
-        "gaming_streams": [("Gaming", 5, 2), ("Streaming", 24, 1), ("Streaming", 22, 1), ("Streaming", 20, 1), ("Browsing", 5, 2)],
-        "bulk_backup": [("Downloads", 48, 2), ("Downloads", 42, 1), ("Cloud backup", 35, 2), ("Cloud backup", 30, 1), ("Browsing", 6, 2)],
-    }
-    result = []
-    for i, (kind, rate, count) in enumerate(specs.get(scenario, specs["work_call_iso"])):
-        for j in range(count):
-            result.append({"id": f"s{i}{j}", "name": ["Weekly team sync", "Linux ISO mirror", "Living room TV", "Console session", "Photo backup", "Web browsing"][((i+j) % 6)],
-                           "class": kind, "protocol": PROTOCOLS[CLASSES.index(kind)], "offered": float(rate),
-                           "confidence": round(0.86 + 0.13 * ((i + j) % 4) / 4, 2), "priority": "Interactive" if kind in ("Voice", "Video call", "Gaming", "Browsing") else "Bulk"})
-    return result
+def scenario_sessions(scenario: str, seed: int = 42) -> list[dict[str, Any]]:
+    """Compatibility helper returning generated flows classified from metadata."""
+    return generate_sessions(scenario, seed)
 
 
 @dataclass
@@ -108,9 +80,9 @@ class Simulator:
     paused: bool = False
     adaptive: bool = True
     scenario: str = "work_call_iso"
-    capacity: float = 100.0
+    capacity: float = 100.0  # simulator's hidden ground truth, never given directly to the controller
     estimated_capacity: float = 100.0
-    policies: dict[str, dict] = field(default_factory=lambda: {k: v.copy() for k, v in DEFAULT_POLICIES.items()})
+    policies: dict[str, dict] = field(default_factory=lambda: {key: value.copy() for key, value in DEFAULT_POLICIES.items()})
     sessions: list[dict] = field(default_factory=list)
     intents: list[dict] = field(default_factory=list)
     tick: int = 0
@@ -120,128 +92,167 @@ class Simulator:
     history: list[dict] = field(default_factory=list)
     policy_log: list[dict] = field(default_factory=list)
     last_metrics: dict = field(default_factory=dict)
+    timeseries: list[dict] = field(default_factory=list)
+    capacity_samples: list[dict] = field(default_factory=list)
     started_at: float | None = None
     _rng: random.Random = field(default_factory=lambda: random.Random(42))
-    _traffic_rng: random.Random = field(default_factory=lambda: random.Random(42))
+    _traffic_rng: random.Random = field(default_factory=lambda: random.Random(1033))
+    _probe_rng: random.Random = field(default_factory=lambda: random.Random(17))
     estimator: CapacityEstimator = field(default_factory=CapacityEstimator)
+    queues: QueueModel = field(default_factory=QueueModel)
 
     def start(self, scenario: str | None = None, adaptive: bool = True, seed: int = 42) -> dict:
         if scenario:
             if scenario not in SCENARIOS:
                 raise ValueError("Unknown experiment scenario")
             self.scenario = scenario
+        config = SCENARIO_CONFIG[self.scenario]
         self.adaptive, self.seed = bool(adaptive), int(seed)
         self._rng = random.Random(self.seed)
         self._traffic_rng = random.Random(self.seed + 991)
-        self.tick, self.latency_hist = 0, deque(maxlen=100)
-        self.capacity = 100.0
+        self._probe_rng = random.Random(self.seed + 1777)
+        self.tick = 0
+        self.latency_hist = deque(maxlen=100)
+        self.capacity = float(config["link_mbps"])
         self.estimated_capacity = self.capacity
         self.estimator = CapacityEstimator(self.capacity)
-        self.sessions = scenario_sessions(self.scenario)
+        impairment = config["impairments"]
+        self.queues = QueueModel(impairment["buffer_bytes_per_class"], impairment["base_rtt_ms"], shared_fifo=not self.adaptive)
+        self.sessions = generate_sessions(self.scenario, self.seed)
+        self.timeseries, self.capacity_samples = [], []
+        self.last_metrics = {}
         self.running, self.paused, self.started_at = True, False, time.time()
         self.timeline = [{"time": time.time(), "event": f"Experiment started · {SCENARIOS[self.scenario]}", "type": "info"}]
         return self.step()
 
     def step(self) -> dict:
         if not self.sessions:
-            self.sessions = scenario_sessions(self.scenario)
+            self.sessions = generate_sessions(self.scenario, self.seed)
         self.tick += 1
-        # A demand/capacity transient creates realistic queue and delay dynamics.
-        offered_by_class = {c: 0.0 for c in CLASSES}
-        for s in self.sessions:
-            offered_by_class[s["class"]] = offered_by_class.get(s["class"], 0) + s["offered"] * (0.95 + self._traffic_rng.random() * 0.1)
-        if self.scenario == "capacity_drop" and self.tick == 8:
-            self.capacity = 20.0
-            self.timeline.append({"time": time.time(), "event": "Link capacity dropped from 100 to 20 Mbps", "type": "warning"})
-        self.estimated_capacity = self.estimator.observe(self.capacity)
-        if self.adaptive:
-            policy = self._effective_policies()
-        else:
-            policy = {c: {"minimum": 0, "limit": 1000, "weight": 1, "priority": 5} for c in CLASSES}
-        allocated = weighted_allocate(offered_by_class, self.estimated_capacity, policy, self.adaptive)
-        offered = sum(offered_by_class.values())
-        throughput = sum(allocated.values())
-        congestion = max(0.0, offered / max(1, self.estimated_capacity) - 0.82)
-        qdepth = max(0.0, (0 if not self.last_metrics else self.last_metrics.get("queue_depth", 0) * 0.64) + congestion * 70 + (offered - throughput) * 0.12)
-        latency = (8 + min(48, qdepth * 0.4) if self.adaptive else 10 + qdepth * 1.25) + self._rng.random() * 2
-        jitter = 1.1 + min(24, qdepth * (0.12 if self.adaptive else 0.25)) + self._rng.random() * 1.2
-        loss = min(12, max(0, congestion * (2.0 if self.adaptive else 5.2) + max(0, qdepth - 60) * 0.025))
-        self.latency_hist.append(latency)
-        p95 = sorted(self.latency_hist)[max(0, math.ceil(len(self.latency_hist) * .95) - 1)]
-        fairness = jain_fairness(list(allocated.values()))
-        per_class = {c: round(allocated.get(c, 0), 2) for c in CLASSES if offered_by_class.get(c, 0) > 0}
-        for s in self.sessions:
-            class_total = offered_by_class.get(s["class"], 0)
-            s["throughput"] = round(allocated.get(s["class"], 0) * s["offered"] / class_total, 2) if class_total else 0
-            s["qos_class"] = s["class"]
-        self.last_metrics = {"tick": self.tick, "time": time.time(), "throughput": round(throughput, 2), "capacity": self.capacity,
-                             "estimated_capacity": round(self.estimated_capacity, 2), "offered": round(offered, 2), "latency": round(latency, 2), "p95_latency": round(p95, 2),
-                             "jitter": round(jitter, 2), "packet_loss": round(loss, 3), "queue_depth": round(qdepth, 2), "fairness": round(fairness, 4),
-                             "throughput_by_class": per_class, "active_sessions": len(self.sessions), "adaptive": self.adaptive, "simulated": True}
-        self.timeline.append({"time": time.time(), "event": f"Tick {self.tick}: {throughput:.1f} Mbps served; {latency:.1f} ms latency", "type": "metric"})
+        config = SCENARIO_CONFIG[self.scenario]
+        impairment = config["impairments"]
+        capacity_change = config.get("capacity_change")
+        if capacity_change and self.tick == capacity_change["tick"]:
+            before = self.capacity
+            self.capacity = float(capacity_change["capacity_mbps"])
+            self.timeline.append({"time": time.time(), "event": f"WAN capacity changed from {before:g} to {self.capacity:g} Mbps", "type": "warning"})
+
+        # The estimator sees a noisy probe observation, never the hidden true capacity.
+        noise = impairment["probe_noise_fraction"]
+        probe = max(1.0, self.capacity * (1 + self._probe_rng.uniform(-noise, noise)))
+        self.estimated_capacity = self.estimator.observe(probe)
+        self.capacity_samples.append({"tick": self.tick, "true_mbps": self.capacity, "probe_mbps": round(probe, 3), "estimate_mbps": round(self.estimated_capacity, 3)})
+
+        offered_by_class = {name: 0.0 for name in CLASSES}
+        packet_bytes_by_class: dict[str, float] = {}
+        for session in self.sessions:
+            if not session["manual_override"]:
+                # Classification is performed from the generated flow metadata at flow creation.
+                pass
+            offered = session["offered"] * (0.95 + self._traffic_rng.random() * 0.1)
+            session["current_offered"] = offered
+            kind = session["class"]
+            offered_by_class[kind] += offered
+            packet_bytes_by_class[kind] = session["mean_packet_bytes"]
+
+        queue_demand = self.queues.backlog_demand_mbps(CLASSES)
+        schedulable_demand = {name: offered_by_class[name] + queue_demand[name] for name in CLASSES}
+        policy = self._effective_policies() if self.adaptive else {name: {"minimum":0,"limit":1000,"weight":1,"priority":5} for name in CLASSES}
+        scheduled_allocation = (weighted_allocate(schedulable_demand, self.estimated_capacity, policy, True)
+                                if self.adaptive else fifo_allocate(offered_by_class, self.estimated_capacity))
+        scheduled_total = sum(scheduled_allocation.values())
+        physical_scale = min(1.0, self.capacity / scheduled_total) if scheduled_total else 1.0
+        allocation = {name: rate * physical_scale for name,rate in scheduled_allocation.items()}
+        queue_metrics = self.queues.advance(offered_by_class, allocation, packet_bytes_by_class, impairment["tick_seconds"])
+        offered_total = sum(offered_by_class.values())
+        throughput = queue_metrics["throughput_mbps"]
+        self.latency_hist.append(queue_metrics["latency_ms"])
+        p95 = sorted(self.latency_hist)[max(0, math.ceil(len(self.latency_hist) * .95)-1)]
+        for session in self.sessions:
+            class_total = offered_by_class.get(session["class"], 0.0)
+            share = session["current_offered"] / class_total if class_total else 0.0
+            session["throughput"] = round(allocation.get(session["class"], 0.0) * share, 3)
+            session["qos_class"] = session["class"]
+        class_throughput = {name: round(allocation[name], 3) for name in CLASSES if offered_by_class[name] > 0}
+        active_flow_rates = [session["throughput"] for session in self.sessions if session.get("current_offered", 0) > 0]
+        classified_count = len(self.sessions)
+        class_accuracy = sum(session["automatic_class"] == session["truth_class"] for session in self.sessions) / max(1, classified_count)
+        metrics = {"tick":self.tick,"time":time.time(),"throughput":round(throughput,3),"capacity":self.capacity,
+            "estimated_capacity":round(self.estimated_capacity,3),"capacity_probe":round(probe,3),"capacity_error_pct":round(abs(self.estimated_capacity-self.capacity)/self.capacity*100,3),
+            "offered":round(offered_total,3),"latency":round(queue_metrics["latency_ms"],3),"p95_latency":round(p95,3),
+            "jitter":round(queue_metrics["jitter_ms"],3),"packet_loss":round(queue_metrics["packet_loss_pct"],5),"queue_depth":round(queue_metrics["queue_packets"],2),
+            "dropped_packets":round(queue_metrics["dropped_packets"],2),"arrived_packets":round(queue_metrics["arrived_packets"],2),
+            "scheduled_mbps":round(scheduled_total,3),"capacity_limited":physical_scale < 0.999,
+            "fairness":round(jain_fairness(active_flow_rates),5),"throughput_by_class":class_throughput,
+            "latency_by_class":{key:round(value,3) for key,value in queue_metrics["latency_by_class_ms"].items()},
+            "active_sessions":len(self.sessions),"classifier_accuracy":round(class_accuracy,5),
+            "adaptive":self.adaptive,"simulated":True}
+        self.last_metrics = metrics
+        self.timeseries.append({key:value for key,value in metrics.items() if key != "time"})
+        self.timeline.append({"time":time.time(),"event":f"Tick {self.tick}: {throughput:.1f} Mbps served; {metrics['latency']:.1f} ms interactive latency","type":"metric"})
         return self.snapshot()
 
     def _effective_policies(self) -> dict[str, dict]:
-        result = {k: v.copy() for k, v in self.policies.items()}
-        now = time.time()
+        result={key:value.copy() for key,value in self.policies.items()}
+        now=time.time()
         for intent in list(self.intents):
             if intent["expires_at"] <= now:
                 self.intents.remove(intent)
-                self.timeline.append({"time": now, "event": f"Intent expired · {intent['name']}", "type": "info"})
+                self.timeline.append({"time":now,"event":f"Intent expired · {intent['name']}","type":"info"})
                 continue
-            target = {"Prioritize Work Call": "Video call", "Gaming": "Gaming", "Voice": "Voice"}.get(intent["name"])
+            target={"Prioritize Work Call":"Video call","Gaming":"Gaming","Voice":"Voice"}.get(intent["name"])
             if target:
                 result[target]["minimum"] *= 1.8
                 result[target]["weight"] *= 2.5
         return result
 
     def snapshot(self) -> dict:
-        return {"status": "running" if self.running and not self.paused else ("paused" if self.paused else "stopped"),
-                "metrics": self.last_metrics, "sessions": self.sessions, "policies": self.policies,
-                "intents": self.intents, "timeline": self.timeline[-40:], "simulated": True,
-                "controller": "Adaptive" if self.adaptive else "Baseline", "policy_changes": self.policy_log[-10:]}
+        safe_sessions=[]
+        for session in self.sessions:
+            safe={key:value for key,value in session.items() if key not in {"truth_class","automatic_class","manual_override","demand_factor","current_offered"}}
+            safe_sessions.append(safe)
+        return {"status":"running" if self.running and not self.paused else ("paused" if self.paused else "stopped"),
+            "metrics":self.last_metrics,"sessions":safe_sessions,"policies":self.policies,"intents":self.intents,
+            "timeline":self.timeline[-40:],"simulated":True,"controller":"Adaptive" if self.adaptive else "Baseline",
+            "policy_changes":self.policy_log[-10:]}
 
     def set_capacity(self, capacity: float) -> dict:
         if capacity < 1 or capacity > 1000:
             raise ValueError("Capacity must be between 1 and 1000 Mbps")
-        before = self.capacity
-        self.capacity = float(capacity)
-        self.timeline.append({"time": time.time(), "event": f"Link capacity changed: {before:g} → {capacity:g} Mbps", "type": "warning"})
+        before=self.capacity
+        self.capacity=float(capacity)
+        self.timeline.append({"time":time.time(),"event":f"Simulator link setting changed from {before:g} to {capacity:g} Mbps","type":"warning"})
         return self.step() if self.running and not self.paused else self.snapshot()
 
     def apply_policies(self, policies: dict[str, dict]) -> dict:
         if set(policies) != set(CLASSES):
             raise ValueError("Policy must configure all traffic classes")
-        for name, cfg in policies.items():
-            if set(cfg) != {"priority", "minimum", "limit", "weight"} or not 1 <= int(cfg["priority"]) <= 8 or not 0 <= float(cfg["minimum"]) <= 1000 or not 0.1 <= float(cfg["weight"]) <= 100 or not 0.1 <= float(cfg["limit"]) <= 1000:
+        for name,cfg in policies.items():
+            if set(cfg)!={"priority","minimum","limit","weight"} or not 1<=int(cfg["priority"])<=8 or not 0<=float(cfg["minimum"])<=1000 or not .1<=float(cfg["weight"])<=100 or not .1<=float(cfg["limit"])<=1000:
                 raise ValueError(f"Invalid policy values for {name}")
-        old = self.policies
-        event={"id": str(uuid.uuid4()), "time": time.time(), "before": old, "after": policies, "label": "Policy applied"}
-        self.history.append(event)
-        self.policy_log.append(event)
-        self.policies = {k: {a: float(b) if a in ("minimum", "limit", "weight") else int(b) for a, b in v.items()} for k, v in policies.items()}
-        self.timeline.append({"time": time.time(), "event": "Adaptive policy updated", "type": "policy"})
+        old=self.policies
+        event={"id":str(uuid.uuid4()),"time":time.time(),"before":old,"after":policies,"label":"Policy applied"}
+        self.history.append(event); self.policy_log.append(event)
+        self.policies={key:{name:float(value) if name in ("minimum","limit","weight") else int(value) for name,value in cfg.items()} for key,cfg in policies.items()}
+        self.timeline.append({"time":time.time(),"event":"Adaptive policy updated","type":"policy"})
         return self.snapshot()
 
     def rollback(self) -> dict:
         if not self.history:
             raise ValueError("No policy change available to roll back")
-        change = self.history.pop()
-        self.policies = change["before"]
+        change=self.history.pop(); self.policies=change["before"]
         self.policy_log.append({"id":str(uuid.uuid4()),"time":time.time(),"before":change["after"],"after":self.policies,"label":"Policy rollback"})
-        self.timeline.append({"time": time.time(), "event": "Policy rollback applied", "type": "policy"})
+        self.timeline.append({"time":time.time(),"event":"Policy rollback applied","type":"policy"})
         return self.snapshot()
 
     def activate_intent(self, name: str, duration: int) -> dict:
-        if name not in ("Prioritize Work Call", "Gaming", "Voice", "Balanced household") or not 1 <= duration <= 240:
+        if name not in ("Prioritize Work Call","Gaming","Voice","Balanced household") or not 1<=duration<=240:
             raise ValueError("Select a supported intent and duration between 1 and 240 minutes")
-        intent = {"id": str(uuid.uuid4()), "name": name, "duration_minutes": duration, "activated_at": time.time(), "expires_at": time.time() + duration * 60}
-        self.intents.append(intent)
-        self.timeline.append({"time": time.time(), "event": f"Intent activated · {name} ({duration} min)", "type": "policy"})
-        return self.step() if self.running else self.snapshot()
+        intent={"id":str(uuid.uuid4()),"name":name,"duration_minutes":duration,"activated_at":time.time(),"expires_at":time.time()+duration*60}
+        self.intents.append(intent); self.timeline.append({"time":time.time(),"event":f"Intent activated · {name} ({duration} min)","type":"policy"})
+        return self.step() if self.running and not self.paused else self.snapshot()
 
     def cancel_intent(self, intent_id: str) -> dict:
-        self.intents = [x for x in self.intents if x["id"] != intent_id]
-        self.timeline.append({"time": time.time(), "event": "Service intent cancelled", "type": "info"})
+        self.intents=[item for item in self.intents if item["id"]!=intent_id]
+        self.timeline.append({"time":time.time(),"event":"Service intent cancelled","type":"info"})
         return self.snapshot()
-

@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from .engine import Simulator, SCENARIOS, CLASSES, DEFAULT_POLICIES
+from .classifier import FlowMetadata, classify_flow
+from .experiments import run_comparison
 from .enforcement import LinuxTcAdapter
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,6 +39,8 @@ class PolicyRequest(BaseModel):
 class CorrectionRequest(BaseModel):
     session_id: str
     traffic_class: str
+class ClassificationRequest(BaseModel):
+    metadata: dict
 class ExperimentRequest(BaseModel):
     scenario: str
     seed: int = 42
@@ -44,6 +48,7 @@ class ExperimentRequest(BaseModel):
 class EnforcementRequest(BaseModel):
     interface: str
     confirmed: bool = False
+    capacity_mbps: float = Field(default=100, ge=1, le=1000)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -136,32 +141,23 @@ async def correct(req: CorrectionRequest):
     if req.traffic_class not in CLASSES: raise HTTPException(400,"Unknown traffic class")
     session=next((x for x in sim.sessions if x["id"]==req.session_id),None)
     if not session: raise HTTPException(404,"Session not found")
-    session["class"]=req.traffic_class; session["qos_class"]=req.traffic_class; session["confidence"]=1.0
+    session["class"]=req.traffic_class; session["qos_class"]=req.traffic_class; session["confidence"]=1.0; session["manual_override"]=True; session["classification_rule"]="Manually corrected by operator"
     sim.timeline.append({"time":time.time(),"event":f"Manual classification · {session['name']} → {req.traffic_class}","type":"policy"})
     await broadcast(); return sim.snapshot()
-
-def evaluate(scenario:str, adaptive:bool, seed:int, ticks:int):
-    engine = Simulator()
-    engine.start(scenario,adaptive,seed)
-    metrics=[]
-    for _ in range(ticks): metrics.append(engine.step()["metrics"])
-    keys=["latency","p95_latency","jitter","packet_loss","throughput","fairness"]
-    avg={k:round(sum(m[k] for m in metrics)/len(metrics),4) for k in keys}
-    if scenario == "capacity_drop":
-        adapted=next((m for m in metrics if m["capacity"] == 20 and abs(m["estimated_capacity"]-20) <= 1),None)
-        avg["adaptation_time_s"]=round(max(0,(adapted["tick"]-8) if adapted else ticks),2)
-    else: avg["adaptation_time_s"]=0.0
-    return avg
+@app.post("/api/classify")
+def classify(req: ClassificationRequest):
+    try:
+        return classify_flow(FlowMetadata.from_mapping(req.metadata))
+    except (TypeError,ValueError) as e:
+        raise HTTPException(400,str(e))
 
 @app.post("/api/experiments/run")
 def run_experiment(req: ExperimentRequest):
     if req.scenario not in SCENARIOS: raise HTTPException(400,"Unknown scenario")
     try:
-        baseline=evaluate(req.scenario,False,req.seed,req.ticks)
-        adaptive=evaluate(req.scenario,True,req.seed,req.ticks)
+        result=run_comparison(req.scenario,req.seed,req.ticks)
     except Exception as e: raise HTTPException(500,str(e))
-    result={"scenario":req.scenario,"scenario_name":SCENARIOS[req.scenario],"seed":req.seed,"ticks":req.ticks,"baseline":baseline,"adaptive":adaptive,
-            "improvement":{"latency_pct":round((baseline["latency"]-adaptive["latency"])/max(.01,baseline["latency"])*100,1),"p95_pct":round((baseline["p95_latency"]-adaptive["p95_latency"])/max(.01,baseline["p95_latency"])*100,1),"fairness_points":round(adaptive["fairness"]-baseline["fairness"],4)},"created_at":time.time()}
+    result["created_at"]=time.time()
     conn=db(); cur=conn.execute("INSERT INTO experiments(created_at,scenario,payload) VALUES(?,?,?)",(result["created_at"],req.scenario,json.dumps(result))); result["id"]=cur.lastrowid; conn.commit(); conn.close()
     return result
 @app.get("/api/experiments")
@@ -177,17 +173,24 @@ def experiment(experiment_id:int):
 def report_json(experiment_id:int): return experiment(experiment_id)
 @app.get("/api/experiments/{experiment_id}/report.csv")
 def report_csv(experiment_id:int):
-    result=experiment(experiment_id); out=io.StringIO(); w=csv.writer(out); w.writerow(["metric","baseline","adaptive"])
-    for k in result["baseline"]: w.writerow([k,result["baseline"][k],result["adaptive"][k]])
+    result=experiment(experiment_id); out=io.StringIO(); w=csv.writer(out); w.writerow(["scope","policy","tick","metric","value"])
+    for policy in ("baseline","adaptive"):
+        for key,value in result[policy].items(): w.writerow(["summary",policy,"",key,value])
+        for row in result.get("timeseries",{}).get(policy,[]):
+            tick=row.get("tick","")
+            for key,value in row.items():
+                if isinstance(value,(int,float)) and not isinstance(value,bool): w.writerow(["timeseries",policy,tick,key,value])
     return StreamingResponse(iter([out.getvalue()]),media_type="text/csv",headers={"Content-Disposition":f"attachment; filename=qos-experiment-{experiment_id}.csv"})
 @app.get("/api/enforcement/status")
 def enforcement_status(): return tc.status()
 @app.post("/api/enforcement/apply")
 def enforcement_apply(req:EnforcementRequest):
-    try:return tc.apply(req.interface,req.confirmed)
+    try:return tc.apply(req.interface,req.confirmed,req.capacity_mbps,sim.policies)
     except ValueError as e:raise HTTPException(400,str(e))
 @app.post("/api/enforcement/rollback")
-def enforcement_rollback():return tc.rollback()
+def enforcement_rollback():
+    try:return tc.rollback()
+    except ValueError as e:raise HTTPException(409,str(e))
 @app.websocket("/ws/telemetry")
 async def telemetry(ws:WebSocket):
     await ws.accept(); clients.add(ws)

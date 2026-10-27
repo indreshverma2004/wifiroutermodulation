@@ -77,4 +77,4 @@ def test_capacity_drop_happens_at_tick_eight():
     assert sim.capacity == 100
     snap = sim.step()
     assert snap["metrics"]["capacity"] == 20
-    assert snap["metrics"]["estimated_capacity"] == 20
+    assert 18.4 <= snap["metrics"]["estimated_capacity"] <= 21.6
