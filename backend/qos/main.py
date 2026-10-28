@@ -10,7 +10,7 @@ from .engine import Simulator, SCENARIOS, CLASSES, DEFAULT_POLICIES
 from .classifier import FlowMetadata, classify_flow
 from .experiments import run_comparison
 from .enforcement import LinuxTcAdapter
-from .lan_discovery import scan_local_wifi
+from .lan_discovery import scan_local_wifi, wifi_adapter_traffic
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = Path(os.environ.get("QOS_DB_PATH", ROOT / "qos_history.sqlite3"))
@@ -95,6 +95,16 @@ def network_discovery(request: Request):
         raise HTTPException(403, "Local Wi-Fi discovery is available only from the local app on the same computer as the Wi-Fi connection.")
     try:
         return scan_local_wifi()
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+@app.get("/api/network/traffic")
+def network_traffic(request: Request):
+    client = request.client.host if request.client else ""
+    host = request.headers.get("host", "").split(":", 1)[0].lower()
+    if client not in {"127.0.0.1", "::1", "localhost"} or host not in {"127.0.0.1", "localhost"}:
+        raise HTTPException(403, "Local Wi-Fi traffic counters are available only from the local app.")
+    try:
+        return wifi_adapter_traffic()
     except RuntimeError as e:
         raise HTTPException(503, str(e))
 @app.get("/api/scenarios")

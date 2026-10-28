@@ -5,13 +5,16 @@ import concurrent.futures
 import ipaddress
 import json
 import platform
+import re
 import subprocess
 import threading
 import time
 from datetime import datetime, timezone
+import psutil
 
 _scan_lock = threading.Lock()
 _last_scan_at = 0.0
+_active_interface_name: str | None = None
 
 
 def _powershell_json(script: str, timeout: float = 25.0):
@@ -29,7 +32,7 @@ $a = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and ($_.Name 
 if (-not $a) { throw 'No active physical Wi-Fi adapter was found.' }
 $c = Get-NetIPConfiguration -InterfaceIndex $a.ifIndex
 if (-not $c.IPv4Address) { throw 'The active Wi-Fi adapter has no IPv4 address.' }
-[pscustomobject]@{ interface=$a.Name; description=$a.InterfaceDescription; ifIndex=$a.ifIndex; address=$c.IPv4Address.IPAddress; prefix=[int]$c.IPv4Address.PrefixLength; gateway=$c.IPv4DefaultGateway.NextHop } | ConvertTo-Json -Compress
+[pscustomobject]@{ interface=$a.Name; description=$a.InterfaceDescription; mac=$a.MacAddress; link_speed=[string]$a.LinkSpeed; ifIndex=$a.ifIndex; address=$c.IPv4Address.IPAddress; prefix=[int]$c.IPv4Address.PrefixLength; gateway=$c.IPv4DefaultGateway.NextHop; dns_servers=@($c.DNSServer.ServerAddresses) } | ConvertTo-Json -Compress
 """
     try:
         config = _powershell_json(script)
@@ -57,6 +60,57 @@ $rows | ConvertTo-Json -Compress
     return data if isinstance(data, list) else [data]
 
 
+def _wifi_radio_details() -> dict:
+    """Read the current association details from Windows WLAN AutoConfig."""
+    try:
+        result = subprocess.run(
+            ["netsh.exe", "wlan", "show", "interfaces"],
+            check=True, capture_output=True, text=True, timeout=8.0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return {}
+    values = {}
+    for line in result.stdout.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        values[key.strip().lower()] = value.strip()
+
+    def number(key: str, pattern: str = r"-?\d+(?:\.\d+)?"):
+        match = re.search(pattern, values.get(key, ""))
+        return float(match.group()) if match else None
+
+    return {
+        "ssid": values.get("ssid"), "access_point_mac": values.get("ap bssid"),
+        "band": values.get("band"), "channel": values.get("channel"),
+        "radio_type": values.get("radio type"), "authentication": values.get("authentication"),
+        "cipher": values.get("cipher"), "signal_percent": number("signal"),
+        "signal_dbm": number("rssi"), "receive_link_mbps": number("receive rate (mbps)"),
+        "transmit_link_mbps": number("transmit rate (mbps)"),
+        "connection_state": values.get("state"),
+    }
+
+
+def wifi_adapter_traffic() -> dict:
+    """Return cumulative counters for this PC's Wi-Fi adapter, not other clients."""
+    global _active_interface_name
+    if not _active_interface_name:
+        config = _wifi_config()
+        _active_interface_name = str(config["interface"])
+    counters = psutil.net_io_counters(pernic=True).get(_active_interface_name)
+    if counters is None:
+        raise RuntimeError(f"No traffic counters are available for Wi-Fi interface {_active_interface_name}.")
+    return {
+        "interface": _active_interface_name,
+        "sampled_at": datetime.now(timezone.utc).isoformat(),
+        "received_bytes": counters.bytes_recv, "sent_bytes": counters.bytes_sent,
+        "received_packets": counters.packets_recv, "sent_packets": counters.packets_sent,
+        "receive_errors": counters.errin, "send_errors": counters.errout,
+        "receive_drops": counters.dropin, "send_drops": counters.dropout,
+    }
+
+
 def _ping(address: str):
     try:
         subprocess.run(
@@ -70,7 +124,7 @@ def _ping(address: str):
 
 def scan_local_wifi() -> dict:
     """Probe only the current Wi-Fi IPv4 subnet and return actual ARP neighbors."""
-    global _last_scan_at
+    global _last_scan_at, _active_interface_name
     if platform.system() != "Windows":
         raise RuntimeError("Local Wi-Fi discovery currently requires the Windows local agent.")
     if not _scan_lock.acquire(blocking=False):
@@ -81,6 +135,7 @@ def scan_local_wifi() -> dict:
             raise RuntimeError("Please wait a few seconds before scanning again.")
         _last_scan_at = now
         config = _wifi_config()
+        _active_interface_name = str(config["interface"])
         address = ipaddress.IPv4Address(config["address"])
         network = ipaddress.IPv4Network(f"{address}/{int(config['prefix'])}", strict=False)
         if not address.is_private or network.num_addresses > 1024:
@@ -121,6 +176,11 @@ def scan_local_wifi() -> dict:
             "local_ip": str(address),
             "subnet": str(network),
             "gateway": config.get("gateway"),
+            "adapter_description": config.get("description"),
+            "adapter_mac": config.get("mac"), "adapter_link_speed": config.get("link_speed"),
+            "dns_servers": config.get("dns_servers", []),
+            "wifi": _wifi_radio_details(),
+            "adapter_counters": wifi_adapter_traffic(),
             "scanned_at": datetime.now(timezone.utc).isoformat(),
             "device_count": len(devices),
             "devices": devices,
@@ -133,4 +193,8 @@ def scan_local_wifi() -> dict:
 
 if __name__ == "__main__":
     result = scan_local_wifi()
-    print(json.dumps({key: result[key] for key in ("interface", "local_ip", "subnet", "gateway", "device_count", "bandwidth_available", "bandwidth_note")}, indent=2))
+    summary = {key: result[key] for key in ("interface", "local_ip", "subnet", "gateway", "device_count", "bandwidth_available", "bandwidth_note")}
+    summary["wifi"] = {key: result["wifi"].get(key) for key in ("band", "channel", "radio_type", "signal_percent", "signal_dbm", "receive_link_mbps", "transmit_link_mbps")}
+    summary["adapter"] = {key: result[key] for key in ("adapter_description", "adapter_mac", "adapter_link_speed")}
+    summary["adapter_counters"] = {key: result["adapter_counters"][key] for key in ("received_bytes", "sent_bytes", "received_packets", "sent_packets", "receive_errors", "send_errors")}
+    print(json.dumps(summary, indent=2))
