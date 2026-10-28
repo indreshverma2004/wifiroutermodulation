@@ -104,7 +104,7 @@ def scan_local_wifi() -> dict:
             is_gateway = str(ip) == str(config.get("gateway", ""))
             seen[str(ip)] = {
                 "id": f"lan-{str(ip).replace('.', '-').replace(':', '-')}",
-                "name": "Wi-Fi router" if is_gateway else f"Device at {ip}",
+                "name": "Wi-Fi router" if is_gateway else "LAN client",
                 "type": "Router" if is_gateway else "Network device",
                 "ip": str(ip), "mac": mac,
                 "connected": neighbor.get("State") == "Reachable", "active": neighbor.get("State") == "Reachable",
