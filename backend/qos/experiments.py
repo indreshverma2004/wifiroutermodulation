@@ -5,7 +5,7 @@ import time
 from statistics import fmean
 from typing import Any
 from .engine import Simulator
-from .traffic import SCENARIO_CONFIG, generate_sessions
+from .traffic import SCENARIO_CONFIG, generate_devices, generate_sessions
 
 
 def percentile(values: list[float], p: float) -> float:
@@ -55,7 +55,7 @@ def run_policy_trial(scenario: str, adaptive: bool, seed: int, ticks: int) -> di
         "engine_cpu_pct_of_tick":round(100*cpu_ms/(1000*float(config["impairments"]["tick_seconds"])),4),
     }
     return {"summary":summary,"timeseries":rows,"capacity_samples":engine.capacity_samples,
-            "classification":[{"session_id":s["id"],"truth_class":s["truth_class"],"predicted_class":s["class"],
+            "classification":[{"session_id":s["id"],"device_id":s["device_id"],"device_name":s["device_name"],"truth_class":s["truth_class"],"predicted_class":s["automatic_class"],
                 "confidence":s["confidence"],"rule":s["classification_rule"],"metadata":s["metadata"]} for s in engine.sessions]}
 
 
@@ -66,12 +66,13 @@ def run_comparison(scenario: str, seed: int, ticks: int) -> dict[str, Any]:
     adaptive=run_policy_trial(scenario,True,seed,ticks)
     config=SCENARIO_CONFIG[scenario]
     flows=generate_sessions(scenario,seed)
-    generated_data=[{"session_id":s["id"],"name":s["name"],"truth_class":s["truth_class"],"predicted_class":s["class"],
+    generated_data=[{"session_id":s["id"],"name":s["name"],"device_id":s["device_id"],"device_name":s["device_name"],
+        "direction":s["direction"],"truth_class":s["truth_class"],"predicted_class":s["automatic_class"],
         "offered_mbps":s["offered"],"flow_metadata":s["metadata"]} for s in flows]
     b,a=baseline["summary"],adaptive["summary"]
     return {"scenario":scenario,"scenario_name":config["name"],"seed":seed,"ticks":ticks,
         "configuration":{"initial_capacity_mbps":config["link_mbps"],"capacity_change":config["capacity_change"],
-            "impairments":config["impairments"],"generated_flows":generated_data,
+            "impairments":config["impairments"],"generated_flows":generated_data,"demo_devices":generate_devices(scenario),
             "model":"Both arms use 1-second fluid arrivals, packet-size-based queue counts, finite byte buffers with tail drops, and propagation + queueing delay. Baseline is a shared FIFO queue with offered-load-proportional service; adaptive uses isolated per-class queues and the configured weighted policy. Jitter is tick-to-tick change in modeled queueing delay, not packet-level jitter."},
         "baseline":b,"adaptive":a,"timeseries":{"baseline":baseline["timeseries"],"adaptive":adaptive["timeseries"]},
         "capacity_samples":{"baseline":baseline["capacity_samples"],"adaptive":adaptive["capacity_samples"]},

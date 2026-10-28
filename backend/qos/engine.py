@@ -10,7 +10,7 @@ from typing import Any
 
 from .capacity import CapacityEstimator
 from .queueing import QueueModel
-from .traffic import SCENARIO_CONFIG, generate_sessions
+from .traffic import SCENARIO_CONFIG, generate_devices, generate_sessions
 
 CLASSES = ["Voice", "Video call", "Gaming", "Streaming", "Browsing", "Downloads", "Cloud backup", "Unknown"]
 DEFAULT_POLICIES = {
@@ -84,6 +84,7 @@ class Simulator:
     estimated_capacity: float = 100.0
     policies: dict[str, dict] = field(default_factory=lambda: {key: value.copy() for key, value in DEFAULT_POLICIES.items()})
     sessions: list[dict] = field(default_factory=list)
+    devices: list[dict] = field(default_factory=list)
     intents: list[dict] = field(default_factory=list)
     tick: int = 0
     seed: int = 42
@@ -119,6 +120,7 @@ class Simulator:
         impairment = config["impairments"]
         self.queues = QueueModel(impairment["buffer_bytes_per_class"], impairment["base_rtt_ms"], shared_fifo=not self.adaptive)
         self.sessions = generate_sessions(self.scenario, self.seed)
+        self.devices = generate_devices(self.scenario)
         self.timeseries, self.capacity_samples = [], []
         self.last_metrics = {}
         self.running, self.paused, self.started_at = True, False, time.time()
@@ -173,6 +175,7 @@ class Simulator:
             share = session["current_offered"] / class_total if class_total else 0.0
             session["throughput"] = round(allocation.get(session["class"], 0.0) * share, 3)
             session["qos_class"] = session["class"]
+        self._update_device_usage(float(impairment["tick_seconds"]))
         class_throughput = {name: round(allocation[name], 3) for name in CLASSES if offered_by_class[name] > 0}
         active_flow_rates = [session["throughput"] for session in self.sessions if session.get("current_offered", 0) > 0]
         classified_count = len(self.sessions)
@@ -185,12 +188,42 @@ class Simulator:
             "scheduled_mbps":round(scheduled_total,3),"capacity_limited":physical_scale < 0.999,
             "fairness":round(jain_fairness(active_flow_rates),5),"throughput_by_class":class_throughput,
             "latency_by_class":{key:round(value,3) for key,value in queue_metrics["latency_by_class_ms"].items()},
-            "active_sessions":len(self.sessions),"classifier_accuracy":round(class_accuracy,5),
+            "active_sessions":len(self.sessions),"connected_devices":len(self.devices),
+            "active_devices":sum(device["active"] for device in self.devices),
+            "device_throughput_mbps":{device["id"]:device["total_mbps"] for device in self.devices},
+            "classifier_accuracy":round(class_accuracy,5),
             "adaptive":self.adaptive,"simulated":True}
         self.last_metrics = metrics
         self.timeseries.append({key:value for key,value in metrics.items() if key != "time"})
         self.timeline.append({"time":time.time(),"event":f"Tick {self.tick}: {throughput:.1f} Mbps served; {metrics['latency']:.1f} ms interactive latency","type":"metric"})
         return self.snapshot()
+
+    def _update_device_usage(self, tick_seconds: float) -> None:
+        usage = {device["id"]:{"download":0.0,"upload":0.0,"sessions":0} for device in self.devices}
+        for session in self.sessions:
+            device_usage = usage.get(session["device_id"])
+            if device_usage is None:
+                continue
+            rate = max(0.0, float(session["throughput"]))
+            if session["direction"] == "upload":
+                device_usage["upload"] += rate
+            elif session["direction"] == "bidirectional":
+                device_usage["download"] += rate * 0.7
+                device_usage["upload"] += rate * 0.3
+            else:
+                device_usage["download"] += rate
+            device_usage["sessions"] += int(session.get("current_offered", 0) > 0)
+        for device in self.devices:
+            current = usage[device["id"]]
+            download, upload = current["download"], current["upload"]
+            total = download + upload
+            device["download_mbps"] = round(download, 3)
+            device["upload_mbps"] = round(upload, 3)
+            device["total_mbps"] = round(total, 3)
+            device["session_count"] = current["sessions"]
+            device["active"] = total > 0.01
+            device["usage_mb"] = round(device["usage_mb"] + total * 0.125 * tick_seconds, 3)
+            device["history"] = (device["history"] + [round(total,3)])[-30:]
 
     def _effective_policies(self) -> dict[str, dict]:
         result={key:value.copy() for key,value in self.policies.items()}
@@ -212,7 +245,7 @@ class Simulator:
             safe={key:value for key,value in session.items() if key not in {"truth_class","automatic_class","manual_override","demand_factor","current_offered"}}
             safe_sessions.append(safe)
         return {"status":"running" if self.running and not self.paused else ("paused" if self.paused else "stopped"),
-            "metrics":self.last_metrics,"sessions":safe_sessions,"policies":self.policies,"intents":self.intents,
+            "metrics":self.last_metrics,"sessions":safe_sessions,"devices":self.devices,"policies":self.policies,"intents":self.intents,
             "timeline":self.timeline[-40:],"simulated":True,"controller":"Adaptive" if self.adaptive else "Baseline",
             "policy_changes":self.policy_log[-10:]}
 

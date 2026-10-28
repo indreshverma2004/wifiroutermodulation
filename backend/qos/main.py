@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio, csv, io, json, os, sqlite3, time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -10,6 +10,7 @@ from .engine import Simulator, SCENARIOS, CLASSES, DEFAULT_POLICIES
 from .classifier import FlowMetadata, classify_flow
 from .experiments import run_comparison
 from .enforcement import LinuxTcAdapter
+from .lan_discovery import scan_local_wifi
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = Path(os.environ.get("QOS_DB_PATH", ROOT / "qos_history.sqlite3"))
@@ -60,6 +61,7 @@ async def lifespan(app: FastAPI):
         if event.get("label")=="Policy applied": sim.history.append(event)
         elif event.get("label")=="Policy rollback" and sim.history: sim.history.pop()
     conn.close()
+    sim.start("work_call_iso", adaptive=True, seed=42)
     task = asyncio.create_task(telemetry_loop())
     yield
     task.cancel()
@@ -84,6 +86,17 @@ async def telemetry_loop():
 def health(): return {"status":"ok", "mode":"simulation", "simulated":True, "database":"sqlite", "enforcement":tc.status()}
 @app.get("/api/state")
 def state(): return sim.snapshot()
+@app.post("/api/network/discovery")
+def network_discovery(request: Request):
+    # Never let a hosted dashboard use its server as a scanner for a visitor's LAN.
+    client = request.client.host if request.client else ""
+    host = request.headers.get("host", "").split(":", 1)[0].lower()
+    if client not in {"127.0.0.1", "::1", "localhost"} or host not in {"127.0.0.1", "localhost"}:
+        raise HTTPException(403, "Local Wi-Fi discovery is available only from the local app on the same computer as the Wi-Fi connection.")
+    try:
+        return scan_local_wifi()
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
 @app.get("/api/scenarios")
 def scenarios(): return [{"id":k,"name":v} for k,v in SCENARIOS.items()]
 @app.post("/api/simulation/start")
@@ -103,7 +116,9 @@ async def stop():
     sim.running=False; sim.paused=False; await broadcast(); return sim.snapshot()
 @app.post("/api/simulation/reset")
 async def reset():
-    sim.running=False; sim.paused=False; sim.tick=0; sim.sessions=[]; sim.intents=[]; sim.last_metrics={}; sim.timeline=[]
+    sim.intents=[]
+    sim.policies={key:value.copy() for key,value in DEFAULT_POLICIES.items()}
+    sim.start("work_call_iso", adaptive=True, seed=42)
     await broadcast(); return sim.snapshot()
 @app.post("/api/simulation/capacity")
 async def capacity(req: CapacityRequest):
