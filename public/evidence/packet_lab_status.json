@@ -1,0 +1,13 @@
+﻿{
+  "status": "PARTIAL",
+  "host_platform": "WSL2 Ubuntu Linux",
+  "namespace_isolated": true,
+  "physical_or_home_network_used": false,
+  "baseline_ipv4_packet_test": "COMPLETED",
+  "adaptive_policy_packet_test": "NOT COMPLETED",
+  "ipv6_packet_test": "NOT RUN",
+  "reason": "The isolated baseline passed with a 20 Mbps TBF bottleneck, but the WSL kernel rejected the HTB qdisc needed by the class-based policy (Invalid qdisc name). The packet-lab script was corrected so all qdisc commands stay inside the private client namespace. An earlier interrupted attempt briefly attached TBF to WSL eth0; it was removed and the normal mq/fq_codel queues were verified restored.",
+  "script": "scripts/packet_lab.sh",
+  "adaptive_controller_integrated": false,
+  "raw_log": "packet_lab/packet-lab-20261101T025800099755357Z.log"
+}

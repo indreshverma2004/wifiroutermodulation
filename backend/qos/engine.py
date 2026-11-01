@@ -79,6 +79,7 @@ class Simulator:
     running: bool = False
     paused: bool = False
     adaptive: bool = True
+    policy_mode: str = "adaptive"
     scenario: str = "work_call_iso"
     capacity: float = 100.0  # simulator's hidden ground truth, never given directly to the controller
     estimated_capacity: float = 100.0
@@ -102,13 +103,18 @@ class Simulator:
     estimator: CapacityEstimator = field(default_factory=CapacityEstimator)
     queues: QueueModel = field(default_factory=QueueModel)
 
-    def start(self, scenario: str | None = None, adaptive: bool = True, seed: int = 42) -> dict:
+    def start(self, scenario: str | None = None, adaptive: bool = True, seed: int = 42,
+              policy_mode: str | None = None) -> dict:
         if scenario:
             if scenario not in SCENARIOS:
                 raise ValueError("Unknown experiment scenario")
             self.scenario = scenario
+        mode = policy_mode or ("adaptive" if adaptive else "no_qos")
+        if mode not in {"no_qos", "static_qos", "adaptive"}:
+            raise ValueError("Unknown QoS policy mode")
+        self.policy_mode = mode
         config = SCENARIO_CONFIG[self.scenario]
-        self.adaptive, self.seed = bool(adaptive), int(seed)
+        self.adaptive, self.seed = mode == "adaptive", int(seed)
         self._rng = random.Random(self.seed)
         self._traffic_rng = random.Random(self.seed + 991)
         self._probe_rng = random.Random(self.seed + 1777)
@@ -118,7 +124,7 @@ class Simulator:
         self.estimated_capacity = self.capacity
         self.estimator = CapacityEstimator(self.capacity)
         impairment = config["impairments"]
-        self.queues = QueueModel(impairment["buffer_bytes_per_class"], impairment["base_rtt_ms"], shared_fifo=not self.adaptive)
+        self.queues = QueueModel(impairment["buffer_bytes_per_class"], impairment["base_rtt_ms"], shared_fifo=mode == "no_qos")
         self.sessions = generate_sessions(self.scenario, self.seed)
         self.devices = generate_devices(self.scenario)
         self.timeseries, self.capacity_samples = [], []
@@ -159,9 +165,19 @@ class Simulator:
 
         queue_demand = self.queues.backlog_demand_mbps(CLASSES)
         schedulable_demand = {name: offered_by_class[name] + queue_demand[name] for name in CLASSES}
-        policy = self._effective_policies() if self.adaptive else {name: {"minimum":0,"limit":1000,"weight":1,"priority":5} for name in CLASSES}
-        scheduled_allocation = (weighted_allocate(schedulable_demand, self.estimated_capacity, policy, True)
-                                if self.adaptive else fifo_allocate(offered_by_class, self.estimated_capacity))
+        if self.policy_mode == "no_qos":
+            scheduled_allocation = fifo_allocate(offered_by_class, self.estimated_capacity)
+        else:
+            policy = ({key:value.copy() for key,value in self.policies.items()}
+                      if self.policy_mode == "static_qos" else self._effective_policies())
+            if self.policy_mode == "adaptive":
+                # Congestion response: strengthen interactive weights as offered
+                # load approaches estimated capacity; fixed QoS leaves weights alone.
+                pressure = max(0.0, sum(offered_by_class.values()) / max(1.0, self.estimated_capacity) - 0.8)
+                boost = min(2.5, 1.0 + 1.5 * pressure)
+                for name in ("Voice", "Video call", "Gaming"):
+                    policy[name]["weight"] *= boost
+            scheduled_allocation = weighted_allocate(schedulable_demand, self.estimated_capacity, policy, True)
         scheduled_total = sum(scheduled_allocation.values())
         physical_scale = min(1.0, self.capacity / scheduled_total) if scheduled_total else 1.0
         allocation = {name: rate * physical_scale for name,rate in scheduled_allocation.items()}
@@ -192,7 +208,7 @@ class Simulator:
             "active_devices":sum(device["active"] for device in self.devices),
             "device_throughput_mbps":{device["id"]:device["total_mbps"] for device in self.devices},
             "classifier_accuracy":round(class_accuracy,5),
-            "adaptive":self.adaptive,"simulated":True}
+            "adaptive":self.adaptive,"policy_mode":self.policy_mode,"simulated":True}
         self.last_metrics = metrics
         self.timeseries.append({key:value for key,value in metrics.items() if key != "time"})
         self.timeline.append({"time":time.time(),"event":f"Tick {self.tick}: {throughput:.1f} Mbps served; {metrics['latency']:.1f} ms interactive latency","type":"metric"})
@@ -227,6 +243,8 @@ class Simulator:
 
     def _effective_policies(self) -> dict[str, dict]:
         result={key:value.copy() for key,value in self.policies.items()}
+        if self.policy_mode != "adaptive":
+            return result
         now=time.time()
         for intent in list(self.intents):
             if intent["expires_at"] <= now:
@@ -246,7 +264,7 @@ class Simulator:
             safe_sessions.append(safe)
         return {"status":"running" if self.running and not self.paused else ("paused" if self.paused else "stopped"),
             "metrics":self.last_metrics,"sessions":safe_sessions,"devices":self.devices,"policies":self.policies,"intents":self.intents,
-            "timeline":self.timeline[-40:],"simulated":True,"controller":"Adaptive" if self.adaptive else "Baseline",
+            "timeline":self.timeline[-40:],"simulated":True,"controller":{"adaptive":"Adaptive QoS","static_qos":"Static QoS","no_qos":"No QoS"}[self.policy_mode],
             "policy_changes":self.policy_log[-10:]}
 
     def set_capacity(self, capacity: float) -> dict:

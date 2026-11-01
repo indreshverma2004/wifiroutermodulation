@@ -1,0 +1,452 @@
+{
+  "evidence": "simulated model with a deterministic test clock; 1-second ticks and 60-second configured intent lifetime",
+  "seed": 42,
+  "intent": "Prioritize Work Call",
+  "duration_minutes": 1,
+  "expiration_event_seen": true,
+  "phase_summary": {
+    "before": {
+      "latency_ms_mean": 21.9787,
+      "video_call_mbps_mean": 10.0698,
+      "ticks": 10
+    },
+    "during": {
+      "latency_ms_mean": 34.71809803921569,
+      "video_call_mbps_mean": 10.057568627450982,
+      "ticks": 51
+    },
+    "after": {
+      "latency_ms_mean": 18.2467,
+      "video_call_mbps_mean": 10.2308,
+      "ticks": 10
+    }
+  },
+  "timeseries": [
+    {
+      "phase": "before",
+      "tick": 1,
+      "latency_ms": 31.514,
+      "video_call_mbps": 10.319
+    },
+    {
+      "phase": "before",
+      "tick": 2,
+      "latency_ms": 31.166,
+      "video_call_mbps": 10.21
+    },
+    {
+      "phase": "before",
+      "tick": 3,
+      "latency_ms": 24.465,
+      "video_call_mbps": 10.397
+    },
+    {
+      "phase": "before",
+      "tick": 4,
+      "latency_ms": 21.362,
+      "video_call_mbps": 9.998
+    },
+    {
+      "phase": "before",
+      "tick": 5,
+      "latency_ms": 19.621,
+      "video_call_mbps": 10.368
+    },
+    {
+      "phase": "before",
+      "tick": 6,
+      "latency_ms": 18.859,
+      "video_call_mbps": 9.784
+    },
+    {
+      "phase": "before",
+      "tick": 7,
+      "latency_ms": 18.439,
+      "video_call_mbps": 9.564
+    },
+    {
+      "phase": "before",
+      "tick": 8,
+      "latency_ms": 18.201,
+      "video_call_mbps": 10.434
+    },
+    {
+      "phase": "before",
+      "tick": 9,
+      "latency_ms": 18.106,
+      "video_call_mbps": 9.938
+    },
+    {
+      "phase": "before",
+      "tick": 10,
+      "latency_ms": 18.054,
+      "video_call_mbps": 9.686
+    },
+    {
+      "phase": "during",
+      "tick": 11,
+      "latency_ms": 18.025,
+      "video_call_mbps": 10.309
+    },
+    {
+      "phase": "during",
+      "tick": 12,
+      "latency_ms": 18.299,
+      "video_call_mbps": 10.057
+    },
+    {
+      "phase": "during",
+      "tick": 13,
+      "latency_ms": 22.996,
+      "video_call_mbps": 9.68
+    },
+    {
+      "phase": "during",
+      "tick": 14,
+      "latency_ms": 28.831,
+      "video_call_mbps": 9.924
+    },
+    {
+      "phase": "during",
+      "tick": 15,
+      "latency_ms": 38.2,
+      "video_call_mbps": 9.999
+    },
+    {
+      "phase": "during",
+      "tick": 16,
+      "latency_ms": 47.857,
+      "video_call_mbps": 10.082
+    },
+    {
+      "phase": "during",
+      "tick": 17,
+      "latency_ms": 58.326,
+      "video_call_mbps": 9.891
+    },
+    {
+      "phase": "during",
+      "tick": 18,
+      "latency_ms": 67.241,
+      "video_call_mbps": 9.961
+    },
+    {
+      "phase": "during",
+      "tick": 19,
+      "latency_ms": 74.988,
+      "video_call_mbps": 9.985
+    },
+    {
+      "phase": "during",
+      "tick": 20,
+      "latency_ms": 54.692,
+      "video_call_mbps": 10.113
+    },
+    {
+      "phase": "during",
+      "tick": 21,
+      "latency_ms": 54.225,
+      "video_call_mbps": 10.358
+    },
+    {
+      "phase": "during",
+      "tick": 22,
+      "latency_ms": 62.389,
+      "video_call_mbps": 9.868
+    },
+    {
+      "phase": "during",
+      "tick": 23,
+      "latency_ms": 61.271,
+      "video_call_mbps": 9.601
+    },
+    {
+      "phase": "during",
+      "tick": 24,
+      "latency_ms": 58.538,
+      "video_call_mbps": 10.345
+    },
+    {
+      "phase": "during",
+      "tick": 25,
+      "latency_ms": 60.437,
+      "video_call_mbps": 9.54
+    },
+    {
+      "phase": "during",
+      "tick": 26,
+      "latency_ms": 57.951,
+      "video_call_mbps": 10.385
+    },
+    {
+      "phase": "during",
+      "tick": 27,
+      "latency_ms": 53.577,
+      "video_call_mbps": 9.644
+    },
+    {
+      "phase": "during",
+      "tick": 28,
+      "latency_ms": 35.577,
+      "video_call_mbps": 9.76
+    },
+    {
+      "phase": "during",
+      "tick": 29,
+      "latency_ms": 26.544,
+      "video_call_mbps": 10.039
+    },
+    {
+      "phase": "during",
+      "tick": 30,
+      "latency_ms": 22.084,
+      "video_call_mbps": 10.501
+    },
+    {
+      "phase": "during",
+      "tick": 31,
+      "latency_ms": 20.15,
+      "video_call_mbps": 9.972
+    },
+    {
+      "phase": "during",
+      "tick": 32,
+      "latency_ms": 19.053,
+      "video_call_mbps": 10.183
+    },
+    {
+      "phase": "during",
+      "tick": 33,
+      "latency_ms": 18.542,
+      "video_call_mbps": 9.886
+    },
+    {
+      "phase": "during",
+      "tick": 34,
+      "latency_ms": 18.264,
+      "video_call_mbps": 10.139
+    },
+    {
+      "phase": "during",
+      "tick": 35,
+      "latency_ms": 18.129,
+      "video_call_mbps": 10.352
+    },
+    {
+      "phase": "during",
+      "tick": 36,
+      "latency_ms": 22.55,
+      "video_call_mbps": 10.128
+    },
+    {
+      "phase": "during",
+      "tick": 37,
+      "latency_ms": 26.231,
+      "video_call_mbps": 9.816
+    },
+    {
+      "phase": "during",
+      "tick": 38,
+      "latency_ms": 34.928,
+      "video_call_mbps": 10.351
+    },
+    {
+      "phase": "during",
+      "tick": 39,
+      "latency_ms": 37.302,
+      "video_call_mbps": 10.362
+    },
+    {
+      "phase": "during",
+      "tick": 40,
+      "latency_ms": 39.234,
+      "video_call_mbps": 9.628
+    },
+    {
+      "phase": "during",
+      "tick": 41,
+      "latency_ms": 39.015,
+      "video_call_mbps": 10.054
+    },
+    {
+      "phase": "during",
+      "tick": 42,
+      "latency_ms": 40.82,
+      "video_call_mbps": 10.339
+    },
+    {
+      "phase": "during",
+      "tick": 43,
+      "latency_ms": 43.886,
+      "video_call_mbps": 9.9
+    },
+    {
+      "phase": "during",
+      "tick": 44,
+      "latency_ms": 46.566,
+      "video_call_mbps": 10.262
+    },
+    {
+      "phase": "during",
+      "tick": 45,
+      "latency_ms": 50.454,
+      "video_call_mbps": 9.952
+    },
+    {
+      "phase": "during",
+      "tick": 46,
+      "latency_ms": 51.736,
+      "video_call_mbps": 10.24
+    },
+    {
+      "phase": "during",
+      "tick": 47,
+      "latency_ms": 35.192,
+      "video_call_mbps": 10.047
+    },
+    {
+      "phase": "during",
+      "tick": 48,
+      "latency_ms": 26.629,
+      "video_call_mbps": 10.008
+    },
+    {
+      "phase": "during",
+      "tick": 49,
+      "latency_ms": 22.263,
+      "video_call_mbps": 10.129
+    },
+    {
+      "phase": "during",
+      "tick": 50,
+      "latency_ms": 20.107,
+      "video_call_mbps": 10.249
+    },
+    {
+      "phase": "during",
+      "tick": 51,
+      "latency_ms": 19.054,
+      "video_call_mbps": 10.238
+    },
+    {
+      "phase": "during",
+      "tick": 52,
+      "latency_ms": 18.741,
+      "video_call_mbps": 10.44
+    },
+    {
+      "phase": "during",
+      "tick": 53,
+      "latency_ms": 19.555,
+      "video_call_mbps": 10.045
+    },
+    {
+      "phase": "during",
+      "tick": 54,
+      "latency_ms": 20.667,
+      "video_call_mbps": 10.269
+    },
+    {
+      "phase": "during",
+      "tick": 55,
+      "latency_ms": 21.856,
+      "video_call_mbps": 9.965
+    },
+    {
+      "phase": "during",
+      "tick": 56,
+      "latency_ms": 22.853,
+      "video_call_mbps": 9.99
+    },
+    {
+      "phase": "during",
+      "tick": 57,
+      "latency_ms": 20.544,
+      "video_call_mbps": 9.53
+    },
+    {
+      "phase": "during",
+      "tick": 58,
+      "latency_ms": 19.195,
+      "video_call_mbps": 10.143
+    },
+    {
+      "phase": "during",
+      "tick": 59,
+      "latency_ms": 18.614,
+      "video_call_mbps": 9.872
+    },
+    {
+      "phase": "during",
+      "tick": 60,
+      "latency_ms": 18.295,
+      "video_call_mbps": 10.281
+    },
+    {
+      "phase": "during",
+      "tick": 61,
+      "latency_ms": 18.15,
+      "video_call_mbps": 10.124
+    },
+    {
+      "phase": "after",
+      "tick": 63,
+      "latency_ms": 18.036,
+      "video_call_mbps": 10.443
+    },
+    {
+      "phase": "after",
+      "tick": 64,
+      "latency_ms": 18.018,
+      "video_call_mbps": 10.259
+    },
+    {
+      "phase": "after",
+      "tick": 65,
+      "latency_ms": 18.009,
+      "video_call_mbps": 10.432
+    },
+    {
+      "phase": "after",
+      "tick": 66,
+      "latency_ms": 18.005,
+      "video_call_mbps": 10.286
+    },
+    {
+      "phase": "after",
+      "tick": 67,
+      "latency_ms": 18.002,
+      "video_call_mbps": 9.823
+    },
+    {
+      "phase": "after",
+      "tick": 68,
+      "latency_ms": 18.001,
+      "video_call_mbps": 10.242
+    },
+    {
+      "phase": "after",
+      "tick": 69,
+      "latency_ms": 18.001,
+      "video_call_mbps": 10.463
+    },
+    {
+      "phase": "after",
+      "tick": 70,
+      "latency_ms": 18.0,
+      "video_call_mbps": 10.413
+    },
+    {
+      "phase": "after",
+      "tick": 71,
+      "latency_ms": 18.0,
+      "video_call_mbps": 9.624
+    },
+    {
+      "phase": "after",
+      "tick": 72,
+      "latency_ms": 20.395,
+      "video_call_mbps": 10.323
+    }
+  ]
+}

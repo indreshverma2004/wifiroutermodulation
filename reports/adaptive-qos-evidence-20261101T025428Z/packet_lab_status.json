@@ -1,0 +1,7 @@
+{
+  "status": "NOT RUN",
+  "host_platform": "Windows-10-10.0.26200-SP0",
+  "reason": "The supplied packet lab requires Linux network namespaces and CAP_NET_ADMIN; this run is on Windows.",
+  "script": "scripts/packet_lab.sh",
+  "adaptive_controller_integrated": false
+}

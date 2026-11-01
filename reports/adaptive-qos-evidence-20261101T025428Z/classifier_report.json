@@ -1,0 +1,150 @@
+{
+  "evidence": "generated metadata labels only; not real household classification accuracy",
+  "accuracy": 1.0,
+  "macro_precision": 0.75,
+  "macro_recall": 0.75,
+  "macro_f1": 0.75,
+  "labels": [
+    "Voice",
+    "Video call",
+    "Gaming",
+    "Streaming",
+    "Browsing",
+    "Downloads",
+    "Cloud backup",
+    "Unknown"
+  ],
+  "confusion_matrix": {
+    "Voice": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 0,
+      "Downloads": 0,
+      "Cloud backup": 0,
+      "Unknown": 0
+    },
+    "Video call": {
+      "Voice": 0,
+      "Video call": 5,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 0,
+      "Downloads": 0,
+      "Cloud backup": 0,
+      "Unknown": 0
+    },
+    "Gaming": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 0,
+      "Downloads": 0,
+      "Cloud backup": 0,
+      "Unknown": 0
+    },
+    "Streaming": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 5,
+      "Browsing": 0,
+      "Downloads": 0,
+      "Cloud backup": 0,
+      "Unknown": 0
+    },
+    "Browsing": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 5,
+      "Downloads": 0,
+      "Cloud backup": 0,
+      "Unknown": 0
+    },
+    "Downloads": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 0,
+      "Downloads": 5,
+      "Cloud backup": 0,
+      "Unknown": 0
+    },
+    "Cloud backup": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 0,
+      "Downloads": 0,
+      "Cloud backup": 5,
+      "Unknown": 0
+    },
+    "Unknown": {
+      "Voice": 0,
+      "Video call": 0,
+      "Gaming": 0,
+      "Streaming": 0,
+      "Browsing": 0,
+      "Downloads": 0,
+      "Cloud backup": 0,
+      "Unknown": 5
+    }
+  },
+  "per_class": {
+    "Voice": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "support": 0
+    },
+    "Video call": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "Gaming": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "support": 0
+    },
+    "Streaming": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "Browsing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "Downloads": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "Cloud backup": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "Unknown": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    }
+  },
+  "n_flows": 30
+}

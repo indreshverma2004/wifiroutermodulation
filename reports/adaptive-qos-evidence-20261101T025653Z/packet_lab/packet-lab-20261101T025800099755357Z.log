@@ -1,0 +1,54 @@
+Isolated Linux kernel packet lab; no physical or home-network interface is used.
+Saving terminal evidence to: /mnt/c/Users/HP/Desktop/elx/reports/adaptive-qos-evidence-20261101T025653Z/packet_lab/packet-lab-20261101T025800099755357Z.log
+
+=== baseline · IPv4 · TCP bulk + DSCP EF UDP media + ping · 20 Mbps bottleneck ===
+PING 192.0.2.2 (192.0.2.2) 56(84) bytes of data.
+64 bytes from 192.0.2.2: icmp_seq=1 ttl=64 time=2.23 ms
+64 bytes from 192.0.2.2: icmp_seq=2 ttl=64 time=133 ms
+64 bytes from 192.0.2.2: icmp_seq=3 ttl=64 time=174 ms
+64 bytes from 192.0.2.2: icmp_seq=4 ttl=64 time=217 ms
+64 bytes from 192.0.2.2: icmp_seq=5 ttl=64 time=150 ms
+64 bytes from 192.0.2.2: icmp_seq=6 ttl=64 time=168 ms
+64 bytes from 192.0.2.2: icmp_seq=7 ttl=64 time=195 ms
+64 bytes from 192.0.2.2: icmp_seq=8 ttl=64 time=225 ms
+64 bytes from 192.0.2.2: icmp_seq=9 ttl=64 time=160 ms
+64 bytes from 192.0.2.2: icmp_seq=10 ttl=64 time=221 ms
+64 bytes from 192.0.2.2: icmp_seq=11 ttl=64 time=180 ms
+64 bytes from 192.0.2.2: icmp_seq=12 ttl=64 time=218 ms
+64 bytes from 192.0.2.2: icmp_seq=13 ttl=64 time=164 ms
+64 bytes from 192.0.2.2: icmp_seq=14 ttl=64 time=211 ms
+64 bytes from 192.0.2.2: icmp_seq=15 ttl=64 time=260 ms
+64 bytes from 192.0.2.2: icmp_seq=16 ttl=64 time=181 ms
+64 bytes from 192.0.2.2: icmp_seq=17 ttl=64 time=221 ms
+64 bytes from 192.0.2.2: icmp_seq=18 ttl=64 time=230 ms
+64 bytes from 192.0.2.2: icmp_seq=19 ttl=64 time=222 ms
+64 bytes from 192.0.2.2: icmp_seq=20 ttl=64 time=225 ms
+64 bytes from 192.0.2.2: icmp_seq=21 ttl=64 time=223 ms
+64 bytes from 192.0.2.2: icmp_seq=22 ttl=64 time=245 ms
+64 bytes from 192.0.2.2: icmp_seq=23 ttl=64 time=229 ms
+64 bytes from 192.0.2.2: icmp_seq=24 ttl=64 time=203 ms
+64 bytes from 192.0.2.2: icmp_seq=25 ttl=64 time=223 ms
+
+--- 192.0.2.2 ping statistics ---
+25 packets transmitted, 25 received, 0% packet loss, time 4853ms
+rtt min/avg/max/mdev = 2.234/195.115/259.723/50.082 ms, pipe 2
+TCP bulk results:
+[ 12]   0.00-8.22   sec  4.12 MBytes  4.21 Mbits/sec                  receiver
+[SUM]   0.00-8.00   sec  20.0 MBytes  21.0 Mbits/sec   38             sender
+[SUM]   0.00-8.22   sec  16.5 MBytes  16.8 Mbits/sec                  receiver
+
+iperf Done.
+DSCP-marked UDP media results (includes loss and jitter):
+[  5]   6.00-7.00   sec   245 KBytes  2.00 Mbits/sec  173  
+[  5]   7.00-8.00   sec   245 KBytes  2.00 Mbits/sec  173  
+- - - - - - - - - - - - - - - - - - - - - - - - -
+[ ID] Interval           Transfer     Bitrate         Jitter    Lost/Total Datagrams
+[  5]   0.00-8.00   sec  1.91 MBytes  2.00 Mbits/sec  0.000 ms  0/1382 (0%)  sender
+[  5]   0.00-8.22   sec  1.91 MBytes  1.95 Mbits/sec  8.122 ms  0/1382 (0%)  receiver
+
+iperf Done.
+tc counters on the isolated client interface:
+qdisc tbf 1: root refcnt 5 rate 20Mbit burst 32Kb lat 400ms 
+ Sent 20950701 bytes 13930 pkt (dropped 0, overlimits 25141 requeues 0) 
+ backlog 0b 0p requeues 0
+Error: Invalid qdisc name.

@@ -70,18 +70,18 @@ ip netns exec "$SERVER_NS" iperf3 -6 -s -p 5204 >"$TMP_DIR/iperf6-rt.log" 2>&1 &
 sleep 1
 
 install_fifo() {
-  tc qdisc replace dev eth0 root handle 1: tbf rate 20mbit burst 32k latency 400ms
+  ip netns exec "$CLIENT_NS" tc qdisc replace dev eth0 root handle 1: tbf rate 20mbit burst 32k latency 400ms
 }
 
 install_adaptive() {
-  tc qdisc replace dev eth0 root handle 1: htb default 20
-  tc class add dev eth0 parent 1: classid 1:1 htb rate 20mbit ceil 20mbit
-  tc class add dev eth0 parent 1:1 classid 1:10 htb rate 3mbit ceil 3mbit prio 1
-  tc class add dev eth0 parent 1:1 classid 1:20 htb rate 17mbit ceil 20mbit prio 5
-  tc qdisc add dev eth0 parent 1:10 handle 10: fq_codel
-  tc qdisc add dev eth0 parent 1:20 handle 20: fq_codel
-  tc filter add dev eth0 protocol ip parent 1: prio 1 flower ip_tos 0xb8/0xfc flowid 1:10
-  tc filter add dev eth0 protocol ipv6 parent 1: prio 1 flower ip_tos 0xb8/0xfc flowid 1:10
+  ip netns exec "$CLIENT_NS" tc qdisc replace dev eth0 root handle 1: htb default 20
+  ip netns exec "$CLIENT_NS" tc class add dev eth0 parent 1: classid 1:1 htb rate 20mbit ceil 20mbit
+  ip netns exec "$CLIENT_NS" tc class add dev eth0 parent 1:1 classid 1:10 htb rate 3mbit ceil 3mbit prio 1
+  ip netns exec "$CLIENT_NS" tc class add dev eth0 parent 1:1 classid 1:20 htb rate 17mbit ceil 20mbit prio 5
+  ip netns exec "$CLIENT_NS" tc qdisc add dev eth0 parent 1:10 handle 10: fq_codel
+  ip netns exec "$CLIENT_NS" tc qdisc add dev eth0 parent 1:20 handle 20: fq_codel
+  ip netns exec "$CLIENT_NS" tc filter add dev eth0 protocol ip parent 1: prio 1 flower ip_tos 0xb8/0xfc flowid 1:10
+  ip netns exec "$CLIENT_NS" tc filter add dev eth0 protocol ipv6 parent 1: prio 1 flower ip_tos 0xb8/0xfc flowid 1:10
 }
 
 run_case() {
@@ -104,7 +104,7 @@ run_case() {
   echo "DSCP-marked UDP media results (includes loss and jitter):"
   tail -n 8 "$TMP_DIR/${policy}-v${family}-media.txt"
   echo "tc counters on the isolated client interface:"
-  tc -s qdisc show dev eth0
+  ip netns exec "$CLIENT_NS" tc -s qdisc show dev eth0
 }
 
 echo "Isolated Linux kernel packet lab; no physical or home-network interface is used."

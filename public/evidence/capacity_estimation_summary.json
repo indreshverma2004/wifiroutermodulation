@@ -1,0 +1,34 @@
+{
+  "source": "seeded noisy simulated probes (\u00b18%); not a physical capacity test",
+  "runs_per_capacity": 5,
+  "summary": [
+    {
+      "configured_mbps": 20.0,
+      "estimated_mean_mbps": 19.875598508419678,
+      "estimated_sd_mbps": 0.48253360194206657,
+      "absolute_error_mean_mbps": 0.3841406462867859,
+      "percentage_error_mean": 1.9207032314339296
+    },
+    {
+      "configured_mbps": 50.0,
+      "estimated_mean_mbps": 48.41099973349534,
+      "estimated_sd_mbps": 0.9590057692194938,
+      "absolute_error_mean_mbps": 1.5890002665046594,
+      "percentage_error_mean": 3.178000533009319
+    },
+    {
+      "configured_mbps": 100.0,
+      "estimated_mean_mbps": 97.9549342325657,
+      "estimated_sd_mbps": 1.2203160195810818,
+      "absolute_error_mean_mbps": 2.0450657674343033,
+      "percentage_error_mean": 2.0450657674343033
+    },
+    {
+      "configured_mbps": 200.0,
+      "estimated_mean_mbps": 196.32459097999225,
+      "estimated_sd_mbps": 5.710091275832053,
+      "absolute_error_mean_mbps": 5.789581812547783,
+      "percentage_error_mean": 2.8947909062738915
+    }
+  ]
+}
